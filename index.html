@@ -2297,7 +2297,6 @@ function pagePR(){
         <button class="btn btn-ghost btn-sm" onclick="importJSON('pr',()=>navigate('pr'))">⬆ Import</button>
       </div>
     </div>
-    <!-- Filter Bar -->
     <div class="card mb-8" style="padding:10px 14px">
       <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
         <span class="fs-12 fw-600 text-muted">🔍 กรอง:</span>
@@ -2318,6 +2317,11 @@ function pagePR(){
           <option value="">สถานะ ทั้งหมด</option>
           ${statuses.map(v=>`<option value="${v}">${v}</option>`).join('')}
         </select>
+        <select class="select" id="prf_type" style="width:120px;height:30px;font-size:12px" onchange="prFilterRender()">
+          <option value="">ประเภท ทั้งหมด</option>
+          <option value="จัดซื้อ">🛒 จัดซื้อ</option>
+          <option value="จัดจ้าง">📋 จัดจ้าง</option>
+        </select>
         <input class="input" id="prf_date_from" type="date" style="width:140px;height:30px;font-size:12px" oninput="prFilterRender()">
         <span class="fs-12 text-muted">ถึง</span>
         <input class="input" id="prf_date_to" type="date" style="width:140px;height:30px;font-size:12px" oninput="prFilterRender()">
@@ -2328,43 +2332,24 @@ function pagePR(){
       <div class="table-wrap">
         <table class="table" id="prTable">
           <thead><tr>
-            <th>เลขที่ PR</th><th>Project No.</th><th>Project Name</th><th>วันที่</th><th>ผู้ขอ</th><th>แผนก</th>
+            <th>เลขที่ PR</th><th>ประเภท</th><th>Project No.</th><th>Project Name</th>
+            <th>วันที่</th><th>วันที่ใช้งาน</th><th>ผู้ขอ</th><th>แผนก</th>
             <th>รายการ</th><th>สถานะ</th><th>PO อ้างอิง</th><th>การดำเนินการ</th>
           </tr></thead>
           <tbody id="prTableBody">
-            ${list.map(pr=>`<tr>
-              <td><span class="doc-id">${esc(pr.id)}</span></td>
-              <td class="mono fs-12 text-teal">${esc(pr.projNo||'-')}</td>
-              <td class="fs-12">${esc(pr.projName||'-')}</td>
-              <td class="fs-12 text-secondary">${fmtDate(pr.date)}</td>
-              <td>${esc(pr.requester)}</td>
-              <td class="text-muted fs-12">${esc(pr.dept||'-')}</td>
-              <td>${(pr.items||[]).length} รายการ</td>
-              <td>${badge(pr.status)}</td>
-              <td>${pr.poRef?`<span class="ref-link" onclick="navigate('po')">◈ ${esc(pr.poRef)}</span>`:'-'}</td>
-              <td>
-                <div class="flex gap-6">
-                  ${(pr.status==='ร่าง'||pr.status==='รออนุมัติ')&&canEdit('pr')
-                    ? `<button class="btn btn-primary btn-xs" onclick="openPRForm('${pr.id}')">✏ แก้ไข</button>`
-                    : `<button class="btn btn-ghost btn-xs" onclick="viewDocModal('pr','${pr.id}')">👁 ดู</button>`}
-                  ${pr.status==='รออนุมัติ'&&canApprove('pr')?`<button class="btn btn-success btn-xs" onclick="approvePR('${pr.id}')">✓ อนุมัติ</button>`:''}
-                  ${pr.status==='อนุมัติแล้ว'&&!pr.poRef?`<button class="btn btn-teal btn-xs" onclick="prToPO('${pr.id}')">→ PO</button>`:''}
-                  ${pr.status==='อนุมัติแล้ว'?`<button class="btn btn-ghost btn-xs" onclick="viewDocModal('pr','${pr.id}')">👁 ดู</button>`:''}
-                  <button class="btn btn-ghost btn-xs" onclick="printDoc('pr','${pr.id}')">🖨</button>
-                </div>
-              </td>
-            </tr>`).join('')||`<tr><td colspan="8"><div class="empty"><div class="empty-icon">◷</div><div class="empty-text">ยังไม่มีใบขอซื้อ</div><div class="empty-sub">กดปุ่ม "สร้างใบขอซื้อ" เพื่อเริ่มต้น</div></div></td></tr>`}
+            ${prBuildRows(list)}
           </tbody>
         </table>
       </div>
     </div>`;
 }
-
 function openPRForm(editId){
   const pr=editId?DB.pr.find(x=>x.id===editId):null;
   const id=pr?.id||genDocNo('PR','pr');
   const lim=new LineItemsMgr('pr_f',{useAC:true});
   if(pr?.items) lim.setFromDocs(pr.items);
+  const prType = pr?.prType||'จัดซื้อ';
+
   openModal(`
     <div class="modal-header">
       <span style="font-size:18px">◷</span>
@@ -2382,7 +2367,8 @@ function openPRForm(editId){
           <input class="input" id="pr_projname" value="${esc(pr?.projName||'')}" placeholder="ชื่อโครงการ (เด้งอัตโนมัติ)">
         </div>
       </div>
-      <div class="grid g3 mb-12">
+
+      <div class="grid g4 mb-12">
         <div class="field">
           <label class="field-label">ผู้ขอซื้อ <span class="req">*</span></label>
           <input class="input" id="pr_req" value="${esc(pr?.requester||SETTINGS.currentUser)}" placeholder="ชื่อผู้ขอ">
@@ -2395,13 +2381,32 @@ function openPRForm(editId){
           <label class="field-label">วันที่ต้องการ</label>
           <input class="input" type="date" id="pr_need" value="${pr?.needDate||''}">
         </div>
+        <div class="field">
+          <label class="field-label">วันที่ใช้งาน <span class="req">*</span></label>
+          <input class="input" type="date" id="pr_usedate" value="${pr?.useDate||''}">
+        </div>
       </div>
-      <div class="field mb-16">
-        <label class="field-label">หมายเหตุ</label>
-        <input class="input" id="pr_note" value="${esc(pr?.note||'')}" placeholder="หมายเหตุเพิ่มเติม">
+
+      <div class="grid g2 mb-16">
+        <div class="field">
+          <label class="field-label">ประเภทการขอซื้อ <span class="req">*</span></label>
+          <select class="select" id="pr_type" onchange="prTypeChange()">
+            <option value="จัดซื้อ" ${prType==='จัดซื้อ'?'selected':''}>🛒 จัดซื้อ — เลือกสินค้าจากทะเบียน</option>
+            <option value="จัดจ้าง" ${prType==='จัดจ้าง'?'selected':''}>📋 จัดจ้าง — ระบุรายการเองได้อิสระ</option>
+          </select>
+        </div>
+        <div class="field">
+          <label class="field-label">หมายเหตุ</label>
+          <input class="input" id="pr_note" value="${esc(pr?.note||'')}" placeholder="หมายเหตุเพิ่มเติม">
+        </div>
       </div>
+
       <hr class="divider">
-      ${lim.html()}
+
+      <!-- รายการสินค้า — จะสลับ mode ตาม prType -->
+      <div id="pr_lineitems_wrap">
+        ${lim.html()}
+      </div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal()">ยกเลิก</button>
@@ -2410,48 +2415,270 @@ function openPRForm(editId){
       ${canApprove('pr')?`<button class="btn btn-primary" onclick="savePR('${id}','อนุมัติแล้ว',${!!pr})">✓ อนุมัติทันที</button>`:''}
     </div>
   `, {xl:true});
+
   lim.init();
-  // เปิด Project AC
-  requestAnimationFrame(()=>makeProjectAC('pr_projno','pr_projname'));
+  requestAnimationFrame(()=>{
+    makeProjectAC('pr_projno','pr_projname');
+    // ถ้าเป็น edit และเป็นจัดจ้าง ให้ switch mode
+    if(prType==='จัดจ้าง'){
+      prTypeChange();
+    }
+  });
 }
+
+/* ── PR Type Switch (จัดซื้อ / จัดจ้าง) ── */
+window.prTypeChange = function(){
+  const type = document.getElementById('pr_type')?.value;
+  const wrap = document.getElementById('pr_lineitems_wrap');
+  if(!wrap) return;
+
+  if(type === 'จัดซื้อ'){
+    // Mode เดิม — ใช้ LineItemsMgr เลือกจาก list
+    const lim = new LineItemsMgr('pr_f', {useAC:true});
+    // ดึงรายการที่มีอยู่แล้ว (ถ้า switch กลับมา)
+    const existing = window._LIM_pr_f_free ? window._LIM_pr_f_free.get() : [];
+    wrap.innerHTML = lim.html();
+    lim.init();
+    window._PR_TYPE_MODE = 'จัดซื้อ';
+  } else {
+    // Mode จัดจ้าง — พิมพ์อิสระ
+    const freeItems = window._LIM_pr_f 
+      ? window._LIM_pr_f.get().map(it=>({
+          itemName: itemName(it.itemId)||it.itemName||'',
+          qty: it.qty,
+          unit: it.unit,
+          note: it.note||''
+        }))
+      : [];
+    wrap.innerHTML = buildFreeLineItems(freeItems);
+    window._PR_TYPE_MODE = 'จัดจ้าง';
+  }
+};
+
+/* ── Free-text Line Items (จัดจ้าง) ── */
+function buildFreeLineItems(existing=[]){
+  if(!existing.length) existing = [{itemName:'',qty:1,unit:'',note:''}];
+  window._FREE_ITEMS = existing.map(x=>({...x}));
+  return `
+    <div class="line-items-header">
+      <div class="fw-600 fs-13">รายการจัดจ้าง</div>
+      <button class="btn btn-xs btn-ghost" onclick="freeItemAdd()">+ เพิ่มรายการ</button>
+    </div>
+    <div id="free_li_wrap">${renderFreeItems()}</div>
+  `;
+}
+
+function renderFreeItems(){
+  const items = window._FREE_ITEMS || [];
+  if(!items.length){
+    return `<div class="alert alert-info"><span class="alert-icon">ℹ</span><span>กดปุ่ม "+ เพิ่มรายการ" เพื่อเพิ่มรายการจัดจ้าง</span></div>`;
+  }
+  return items.map((it,i)=>`
+    <div class="line-item">
+      <div class="line-item-grid" style="grid-template-columns:3fr 1fr 1fr 2fr auto;gap:8px;align-items:end">
+        <div>
+          <label class="field-label">รายการ/รายละเอียดงาน <span class="req">*</span></label>
+          <input class="input" placeholder="ระบุรายการจัดจ้าง เช่น งานติดตั้งไฟฟ้า, ค่าแรง..." 
+            value="${esc(it.itemName||'')}"
+            oninput="window._FREE_ITEMS[${i}].itemName=this.value">
+        </div>
+        <div>
+          <label class="field-label">จำนวน <span class="req">*</span></label>
+          <input class="input" type="number" min="0.001" step="any" value="${it.qty||1}"
+            oninput="window._FREE_ITEMS[${i}].qty=+this.value">
+        </div>
+        <div>
+          <label class="field-label">หน่วย</label>
+          <input class="input" placeholder="งาน/ครั้ง/วัน..." value="${esc(it.unit||'')}"
+            oninput="window._FREE_ITEMS[${i}].unit=this.value">
+        </div>
+        <div>
+          <label class="field-label">หมายเหตุ/สเปค</label>
+          <input class="input" placeholder="รายละเอียดเพิ่มเติม..." value="${esc(it.note||'')}"
+            oninput="window._FREE_ITEMS[${i}].note=this.value">
+        </div>
+        <div style="display:flex;align-items:flex-end">
+          <button class="btn btn-danger btn-icon btn-sm" onclick="freeItemRemove(${i})" title="ลบ">✕</button>
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+
+window.freeItemAdd = function(){
+  if(!window._FREE_ITEMS) window._FREE_ITEMS = [];
+  window._FREE_ITEMS.push({itemName:'',qty:1,unit:'',note:''});
+  const wrap = document.getElementById('free_li_wrap');
+  if(wrap) wrap.innerHTML = renderFreeItems();
+};
+
+window.freeItemRemove = function(i){
+  if(!window._FREE_ITEMS) return;
+  window._FREE_ITEMS.splice(i,1);
+  const wrap = document.getElementById('free_li_wrap');
+  if(wrap) wrap.innerHTML = renderFreeItems();
+};
 
 window.savePR=function(id,status,isEdit){
   const req=document.getElementById('pr_req')?.value?.trim();
   if(!req){ toast('กรุณากรอกชื่อผู้ขอ','warning'); return; }
-  const lim=window._LIM_pr_f;
-  const items=lim?lim.get():[];
-  if(!items.length){ toast('กรุณาเพิ่มรายการสินค้า','warning'); return; }
-  const doc={id,date:today(),requester:req,dept:document.getElementById('pr_dept')?.value||'',
-    needDate:document.getElementById('pr_need')?.value||'',note:document.getElementById('pr_note')?.value||'',
+
+  const prType = document.getElementById('pr_type')?.value || 'จัดซื้อ';
+  let items = [];
+
+  if(prType === 'จัดซื้อ'){
+    const lim=window._LIM_pr_f;
+    items=lim?lim.get():[];
+    if(!items.length){ toast('กรุณาเพิ่มรายการสินค้า','warning'); return; }
+  } else {
+    // จัดจ้าง — ใช้ free items
+    items = (window._FREE_ITEMS||[]).filter(x=>x.itemName?.trim());
+    if(!items.length){ toast('กรุณาเพิ่มรายการจัดจ้าง','warning'); return; }
+    // normalize ให้มี field เดียวกับ items ปกติ
+    items = items.map(x=>({
+      itemId: '',
+      itemName: x.itemName,
+      qty: x.qty||1,
+      unit: x.unit||'งาน',
+      note: x.note||''
+    }));
+  }
+
+  const doc={
+    id, date:today(),
+    requester:req,
+    dept:document.getElementById('pr_dept')?.value||'',
+    needDate:document.getElementById('pr_need')?.value||'',
+    useDate:document.getElementById('pr_usedate')?.value||'',   // ✅ ใหม่
+    prType,                                                       // ✅ ใหม่
+    note:document.getElementById('pr_note')?.value||'',
     projNo:document.getElementById('pr_projno')?.value||'',
     projName:document.getElementById('pr_projname')?.value||'',
-    status,items};
+    status, items
+  };
+
   if(isEdit){ const idx=DB.pr.findIndex(x=>x.id===id); if(idx>-1) DB.pr[idx]={...DB.pr[idx],...doc}; }
   else DB.pr.push(doc);
   DB.save('pr'); syncDoc('pr', doc); closeModal(); renderNav(); navigate('pr');
   toast(`${isEdit?'แก้ไข':'สร้าง'} PR ${id} สำเร็จ`,'success');
 };
 window.savePRAndRequestApproval=function(id, isEdit){
-  // บันทึกก่อนแล้วส่ง email
   const req=document.getElementById('pr_req')?.value?.trim();
   if(!req){ toast('กรุณากรอกชื่อผู้ขอ','warning'); return; }
-  const lim=window._LIM_pr_f;
-  const items=lim?lim.get():[];
-  if(!items.length){ toast('กรุณาเพิ่มรายการสินค้า','warning'); return; }
-  const doc={id,date:today(),requester:req,dept:document.getElementById('pr_dept')?.value||'',
-    needDate:document.getElementById('pr_need')?.value||'',note:document.getElementById('pr_note')?.value||'',
+
+  const prType = document.getElementById('pr_type')?.value || 'จัดซื้อ';
+  let items = [];
+
+  if(prType === 'จัดซื้อ'){
+    const lim=window._LIM_pr_f;
+    items=lim?lim.get():[];
+    if(!items.length){ toast('กรุณาเพิ่มรายการสินค้า','warning'); return; }
+  } else {
+    items = (window._FREE_ITEMS||[]).filter(x=>x.itemName?.trim());
+    if(!items.length){ toast('กรุณาเพิ่มรายการจัดจ้าง','warning'); return; }
+    items = items.map(x=>({
+      itemId: '',
+      itemName: x.itemName,
+      qty: x.qty||1,
+      unit: x.unit||'งาน',
+      note: x.note||''
+    }));
+  }
+
+  const doc={
+    id, date:today(),
+    requester:req,
+    dept:document.getElementById('pr_dept')?.value||'',
+    needDate:document.getElementById('pr_need')?.value||'',
+    useDate:document.getElementById('pr_usedate')?.value||'',   // ✅ ใหม่
+    prType,                                                       // ✅ ใหม่
+    note:document.getElementById('pr_note')?.value||'',
     projNo:document.getElementById('pr_projno')?.value||'',
     projName:document.getElementById('pr_projname')?.value||'',
-    status:'รออนุมัติ',items,
-    creatorId:SETTINGS.currentUserId};
+    status:'รออนุมัติ', items,
+    creatorId:SETTINGS.currentUserId
+  };
+
   if(isEdit){ const idx=DB.pr.findIndex(x=>x.id===id); if(idx>-1) DB.pr[idx]={...DB.pr[idx],...doc}; }
   else DB.pr.push(doc);
   DB.save('pr'); syncDoc('pr', doc); closeModal(); renderNav(); navigate('pr');
   toast(`ส่งขออนุมัติ PR ${id} แล้ว`,'success');
-  // ส่ง email step 1 (แจ้งผู้อนุมัติ)
   sendApprovalEmail('PR', id, SETTINGS.currentUserId, 1);
 };
+/* ── PR Type Switch ── */
+window.prTypeChange = function(){
+  const type = document.getElementById('pr_type')?.value;
+  const wrap = document.getElementById('pr_lineitems_wrap');
+  if(!wrap) return;
+  if(type==='จัดซื้อ'){
+    const lim=new LineItemsMgr('pr_f',{useAC:true});
+    wrap.innerHTML=lim.html();
+    lim.init();
+  } else {
+    wrap.innerHTML=buildFreeLineItems([]);
+  }
+};
 
+function buildFreeLineItems(existing=[]){
+  if(!existing.length) existing=[{itemName:'',qty:1,unit:'',note:''}];
+  window._FREE_ITEMS=existing.map(x=>({...x}));
+  return `
+    <div class="line-items-header">
+      <div class="fw-600 fs-13">รายการจัดจ้าง</div>
+      <button class="btn btn-xs btn-ghost" onclick="freeItemAdd()">+ เพิ่มรายการ</button>
+    </div>
+    <div id="free_li_wrap">${renderFreeItems()}</div>`;
+}
+
+function renderFreeItems(){
+  const items=window._FREE_ITEMS||[];
+  if(!items.length) return `<div class="alert alert-info"><span class="alert-icon">ℹ</span><span>กดปุ่ม "+ เพิ่มรายการ" เพื่อเพิ่มรายการจัดจ้าง</span></div>`;
+  return items.map((it,i)=>`
+    <div class="line-item">
+      <div class="line-item-grid" style="grid-template-columns:3fr 1fr 1fr 2fr auto;gap:8px;align-items:end">
+        <div>
+          <label class="field-label">รายการ/รายละเอียดงาน <span class="req">*</span></label>
+          <input class="input" placeholder="เช่น งานติดตั้งไฟฟ้า, ค่าแรง..."
+            value="${esc(it.itemName||'')}"
+            oninput="window._FREE_ITEMS[${i}].itemName=this.value">
+        </div>
+        <div>
+          <label class="field-label">จำนวน <span class="req">*</span></label>
+          <input class="input" type="number" min="0.001" step="any" value="${it.qty||1}"
+            oninput="window._FREE_ITEMS[${i}].qty=+this.value">
+        </div>
+        <div>
+          <label class="field-label">หน่วย</label>
+          <input class="input" placeholder="งาน/ครั้ง/วัน..."
+            value="${esc(it.unit||'')}"
+            oninput="window._FREE_ITEMS[${i}].unit=this.value">
+        </div>
+        <div>
+          <label class="field-label">หมายเหตุ/สเปค</label>
+          <input class="input" placeholder="รายละเอียดเพิ่มเติม..."
+            value="${esc(it.note||'')}"
+            oninput="window._FREE_ITEMS[${i}].note=this.value">
+        </div>
+        <div style="display:flex;align-items:flex-end">
+          <button class="btn btn-danger btn-icon btn-sm" onclick="freeItemRemove(${i})">✕</button>
+        </div>
+      </div>
+    </div>`).join('');
+}
+
+window.freeItemAdd=function(){
+  if(!window._FREE_ITEMS) window._FREE_ITEMS=[];
+  window._FREE_ITEMS.push({itemName:'',qty:1,unit:'',note:''});
+  const wrap=document.getElementById('free_li_wrap');
+  if(wrap) wrap.innerHTML=renderFreeItems();
+};
+
+window.freeItemRemove=function(i){
+  if(!window._FREE_ITEMS) return;
+  window._FREE_ITEMS.splice(i,1);
+  const wrap=document.getElementById('free_li_wrap');
+  if(wrap) wrap.innerHTML=renderFreeItems();
+};
 window.approvePR=function(id){
   const pr=DB.pr.find(x=>x.id===id); if(!pr) return;
   pr.status='อนุมัติแล้ว'; pr.approvedBy=SETTINGS.currentUser; pr.approvedAt=today();
@@ -2464,42 +2691,19 @@ window.prToPO=function(prId){
   const pr=DB.pr.find(x=>x.id===prId); if(!pr) return;
   openPOForm(null,pr);
 };
-
-function prGetFiltered(){
-  const fId     = document.getElementById('prf_id')?.value?.toLowerCase().trim()||'';
-  const fProj   = document.getElementById('prf_proj')?.value||'';
-  const fReq    = document.getElementById('prf_req')?.value||'';
-  const fDept   = document.getElementById('prf_dept')?.value||'';
-  const fStatus = document.getElementById('prf_status')?.value||'';
-  const fFrom   = document.getElementById('prf_date_from')?.value||'';
-  const fTo     = document.getElementById('prf_date_to')?.value||'';
-  return [...DB.pr]
-    .sort((a,b)=>b.date?.localeCompare(a.date||'')||0)
-    .filter(pr=>{
-      if(fId     && !pr.id.toLowerCase().includes(fId)) return false;
-      if(fProj   && (pr.projNo||'')!==fProj) return false;
-      if(fReq    && pr.requester!==fReq) return false;
-      if(fDept   && (pr.dept||'')!==fDept) return false;
-      if(fStatus && pr.status!==fStatus) return false;
-      if(fFrom   && pr.date < fFrom) return false;
-      if(fTo     && pr.date > fTo) return false;
-      return true;
-    });
-}
-
-window.prFilterRender = function(){
-  const tbody = document.getElementById('prTableBody');
-  if(!tbody) return;
-  const list = prGetFiltered();
-  if(!list.length){
-    tbody.innerHTML=`<tr><td colspan="10"><div class="empty"><div class="empty-icon">🔍</div><div class="empty-text">ไม่พบเอกสารที่ตรงกับเงื่อนไข</div></div></td></tr>`;
-    return;
-  }
-  tbody.innerHTML = list.map(pr=>`<tr>
+function prBuildRows(list){
+  if(!list.length) return `<tr><td colspan="12"><div class="empty"><div class="empty-icon">◷</div><div class="empty-text">ยังไม่มีใบขอซื้อ</div><div class="empty-sub">กดปุ่ม "สร้างใบขอซื้อ" เพื่อเริ่มต้น</div></div></td></tr>`;
+  return list.map(pr=>`<tr>
     <td><span class="doc-id">${esc(pr.id)}</span></td>
+    <td>
+      <span class="badge ${pr.prType==='จัดจ้าง'?'badge-serial':'badge-approved'}">
+        ${pr.prType==='จัดจ้าง'?'📋 จัดจ้าง':'🛒 จัดซื้อ'}
+      </span>
+    </td>
     <td class="mono fs-12 text-teal">${esc(pr.projNo||'-')}</td>
     <td class="fs-12">${esc(pr.projName||'-')}</td>
     <td class="fs-12 text-secondary">${fmtDate(pr.date)}</td>
+    <td class="fs-12 text-secondary">${pr.useDate?fmtDate(pr.useDate):'-'}</td>
     <td>${esc(pr.requester)}</td>
     <td class="text-muted fs-12">${esc(pr.dept||'-')}</td>
     <td>${(pr.items||[]).length} รายการ</td>
@@ -2517,10 +2721,39 @@ window.prFilterRender = function(){
       </div>
     </td>
   </tr>`).join('');
+}
+function prGetFiltered(){
+  const fId     = document.getElementById('prf_id')?.value?.toLowerCase().trim()||'';
+  const fProj   = document.getElementById('prf_proj')?.value||'';
+  const fReq    = document.getElementById('prf_req')?.value||'';
+  const fDept   = document.getElementById('prf_dept')?.value||'';
+  const fStatus = document.getElementById('prf_status')?.value||'';
+  const fType   = document.getElementById('prf_type')?.value||'';
+  const fFrom   = document.getElementById('prf_date_from')?.value||'';
+  const fTo     = document.getElementById('prf_date_to')?.value||'';
+  return [...DB.pr]
+    .sort((a,b)=>b.date?.localeCompare(a.date||'')||0)
+    .filter(pr=>{
+      if(fId     && !pr.id.toLowerCase().includes(fId)) return false;
+      if(fProj   && (pr.projNo||'')!==fProj) return false;
+      if(fReq    && pr.requester!==fReq) return false;
+      if(fDept   && (pr.dept||'')!==fDept) return false;
+      if(fStatus && pr.status!==fStatus) return false;
+      if(fType   && (pr.prType||'จัดซื้อ')!==fType) return false;
+      if(fFrom   && pr.date < fFrom) return false;
+      if(fTo     && pr.date > fTo) return false;
+      return true;
+    });
+}
+
+window.prFilterRender = function(){
+  const tbody=document.getElementById('prTableBody');
+  if(!tbody) return;
+  tbody.innerHTML=prBuildRows(prGetFiltered());
 };
 
 window.prFilterClear = function(){
-  ['prf_id','prf_proj','prf_req','prf_dept','prf_status','prf_date_from','prf_date_to']
+  ['prf_id','prf_proj','prf_req','prf_dept','prf_status','prf_type','prf_date_from','prf_date_to']
     .forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
   prFilterRender();
 };
