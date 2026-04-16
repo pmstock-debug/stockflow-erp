@@ -2475,7 +2475,7 @@ function renderFreeItems(){
   }
   return items.map((it,i)=>`
     <div class="line-item">
-      <div class="line-item-grid" style="grid-template-columns:3fr 1fr 1fr 2fr auto;gap:8px;align-items:end">
+      <div class="line-item-grid" style="grid-template-columns:3fr 1fr 1fr auto;gap:8px;align-items:end">
         <div>
           <label class="field-label">รายการ/รายละเอียดงาน <span class="req">*</span></label>
           <input class="input" placeholder="ระบุรายการจัดจ้าง เช่น งานติดตั้งไฟฟ้า, ค่าแรง..." 
@@ -2652,12 +2652,6 @@ function renderFreeItems(){
           <input class="input" placeholder="งาน/ครั้ง/วัน..."
             value="${esc(it.unit||'')}"
             oninput="window._FREE_ITEMS[${i}].unit=this.value">
-        </div>
-        <div>
-          <label class="field-label">หมายเหตุ/สเปค</label>
-          <input class="input" placeholder="รายละเอียดเพิ่มเติม..."
-            value="${esc(it.note||'')}"
-            oninput="window._FREE_ITEMS[${i}].note=this.value">
         </div>
         <div style="display:flex;align-items:flex-end">
           <button class="btn btn-danger btn-icon btn-sm" onclick="freeItemRemove(${i})">✕</button>
